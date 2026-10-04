@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mis Finanzas</title>
+<meta name="theme-color" content="#1F3864">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mis Finanzas">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root {
+    --bg: #f3f5f9; --card: #ffffff; --text: #1b2433; --muted: #67718a; --line: #e3e7ef;
+    --navy: #1f3864; --accent: #2e75b6; --gasto: #c0392b; --ingreso: #2e7d32;
+    --chip: #eef2f8; --chip-text: #2b3a55; --shadow: 0 1px 3px rgba(20,30,60,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10141c; --card: #1a202b; --text: #e8ecf3; --muted: #9aa4b8; --line: #2a3242;
+      --navy: #8fb3e8; --accent: #6aa6e6; --gasto: #ef7d72; --ingreso: #6fcf7a;
+      --chip: #252d3b; --chip-text: #d4dceb; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  body[data-mov="Gasto"] { --tono: var(--gasto); }
+  body[data-mov="Ingreso"] { --tono: var(--ingreso); }
+  main { max-width: 520px; margin: 0 auto; padding: 12px 16px 40px; }
+  header { display: flex; align-items: center; gap: 8px; padding: 6px 0 12px; }
+  header h1 { font-size: 20px; margin: 0; flex: 1; color: var(--navy); }
+  .icono { border: 0; background: var(--card); color: var(--text); width: 40px; height: 40px; border-radius: 12px;
+           font-size: 18px; box-shadow: var(--shadow); cursor: pointer; }
+  .card { background: var(--card); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px; }
+  .segmento { display: grid; grid-template-columns: 1fr 1fr; background: var(--chip); border-radius: 12px; padding: 4px; margin-bottom: 14px; }
+  .segmento button { border: 0; background: transparent; padding: 10px; border-radius: 9px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .segmento button.activo[data-mov="Gasto"] { background: var(--gasto); color: #fff; }
+  .segmento button.activo[data-mov="Ingreso"] { background: var(--ingreso); color: #fff; }
+  label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
+  input { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+          border-radius: 10px; padding: 12px; }
+  input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .valor { position: relative; }
+  .valor span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 26px; color: var(--muted); }
+  .valor input { font-size: 30px; font-weight: 700; padding-left: 34px; color: var(--tono); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: 1px solid transparent; background: var(--chip); color: var(--chip-text); padding: 9px 14px; border-radius: 999px;
+          font: inherit; font-size: 15px; cursor: pointer; }
+  .chip.activo { background: var(--tono); color: #fff; }
+  .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .primario { width: 100%; margin-top: 18px; border: 0; border-radius: 12px; padding: 15px; font: inherit; font-weight: 700;
+              font-size: 17px; background: var(--tono); color: #fff; cursor: pointer; }
+  .primario:disabled { opacity: .6; }
+  .aviso { border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+  .aviso.oculto { display: none; }
+  .aviso.info { background: var(--chip); }
+  .aviso.ok { background: color-mix(in srgb, var(--ingreso) 15%, var(--card)); color: var(--ingreso); font-weight: 600; }
+  .aviso.error { background: color-mix(in srgb, var(--gasto) 15%, var(--card)); color: var(--gasto); font-weight: 600; }
+  .pendientes { display: flex; align-items: center; gap: 10px; justify-content: space-between; font-size: 14px; }
+  .pendientes button { border: 0; background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 14px; }
+  h2 { font-size: 15px; margin: 0 0 12px; color: var(--navy); }
+  h2 small { color: var(--muted); font-weight: 400; text-transform: capitalize; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .kpis div { background: var(--bg); border-radius: 10px; padding: 10px 8px; text-align: center; min-width: 0; }
+  .kpis small { display: block; font-size: 11px; color: var(--muted); }
+  .kpis b { font-size: 14px; overflow-wrap: anywhere; }
+  #kpi-gastos { color: var(--gasto); } #kpi-ingresos { color: var(--ingreso); } #kpi-balance { color: var(--navy); }
+  #kpi-balance.negativo { color: var(--gasto); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  .vistas { margin-bottom: 12px; }
+  .vistas button.activo { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+  .barras-mes { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; height: 120px; margin: 4px 0 6px; }
+  .col-mes { border: 0; background: transparent; padding: 0; display: flex; flex-direction: column; align-items: stretch; gap: 4px; cursor: pointer; font: inherit; color: var(--muted); }
+  .col-barras { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 2px; border-bottom: 1px solid var(--line); }
+  .col-barras i { width: 40%; max-width: 9px; border-radius: 3px 3px 0 0; }
+  .col-barras .g, .leyenda .g { background: var(--gasto); }
+  .col-barras .n, .leyenda .n { background: var(--ingreso); }
+  .col-mes small { font-size: 10px; text-align: center; }
+  .leyenda { font-size: 11px; color: var(--muted); margin: 0 0 4px; }
+  .leyenda span { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 4px 0 6px; }
+  .leyenda span:first-child { margin-left: 0; }
+  .promedio { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  .mes-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .mes-nav h2 { flex: 1; text-align: center; margin: 0; text-transform: capitalize; font-size: 16px; }
+  .mes-nav .icono { width: 36px; height: 36px; background: var(--bg); font-size: 22px; line-height: 1; }
+  .mes-nav .icono:disabled { opacity: .3; }
+  .tipo { border-top: 1px solid var(--line); cursor: pointer; }
+  .tipo:first-child { border-top: 0; }
+  .tipo-fila { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; align-items: center; font-size: 14px; padding: 9px 0; }
+  .tipo-nombre { font-weight: 600; min-width: 0; }
+  .tipo-nombre small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+  .detalle { display: none; padding: 0 0 8px 8px; }
+  .tipo.abierto .detalle { display: block; }
+  .tipo.abierto .tipo-fila b::after { content: " ▴"; color: var(--muted); }
+  .detalle li { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; font-size: 13px; padding: 4px 0; color: var(--muted); }
+  .detalle b { color: var(--text); font-weight: 600; }
+  .barra { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+  .barra i { display: block; height: 100%; background: var(--gasto); border-radius: 4px; }
+  #recientes li { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  #recientes li:first-child { border-top: 0; }
+  .fecha { color: var(--muted); font-size: 12px; }
+  .desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .desc small { display: block; color: var(--muted); font-size: 12px; }
+  .ing { color: var(--ingreso); } .gas { color: var(--gasto); }
+  .vacio { color: var(--muted); font-size: 14px; display: block !important; }
+  #pantalla-login { text-align: center; padding-top: 18vh; }
+  #pantalla-login img { width: 84px; height: 84px; border-radius: 20px; }
+  #pantalla-login p { color: var(--muted); }
+</style>
+</head>
+<body data-mov="Gasto">
+<main>
+  <section id="pantalla-login" hidden>
+    <img src="icons/icon-192.png" alt="">
+    <h1 style="color:var(--navy)">Mis Finanzas</h1>
+    <p>Registra tus gastos e ingresos directo en tu<br>“Presupuesto Personal.xlsx” de OneDrive.</p>
+    <button id="entrar" class="primario" style="--tono:var(--navy)">Entrar con Microsoft</button>
+  </section>
+
+  <section id="pantalla-app" hidden>
+    <header>
+      <h1>Mis Finanzas</h1>
+      <button class="icono" id="refrescar" title="Actualizar desde Excel" aria-label="Actualizar">↻</button>
+      <button class="icono" id="salir" title="Cerrar sesión" aria-label="Cerrar sesión">⎋</button>
+    </header>
+
+    <div id="aviso" class="aviso oculto" role="status"></div>
+    <div id="pendientes" class="card pendientes" hidden>
+      <span id="pendientes-texto"></span>
+      <button id="reintentar" type="button">Subir ahora</button>
+    </div>
+
+    <form id="form" class="card" autocomplete="off">
+      <div class="segmento">
+        <button type="button" data-mov="Gasto">Gasto</button>
+        <button type="button" data-mov="Ingreso">Ingreso</button>
+      </div>
+      <div class="valor"><span>$</span><input id="valor" inputmode="numeric" placeholder="0" aria-label="Valor"></div>
+      <label id="titulo-tipo">Tipo de gasto</label>
+      <div class="chips" id="tipos"></div>
+      <div id="bloque-medio">
+        <label>Medio de pago</label>
+        <div class="chips" id="medios"></div>
+      </div>
+      <label for="descripcion">Descripción</label>
+      <input id="descripcion" placeholder="Ej: Mercado de la semana" maxlength="120">
+      <div class="fila">
+        <div><label for="fecha">Fecha</label><input id="fecha" type="date"></div>
+        <div><label for="notas">Notas (opcional)</label><input id="notas" maxlength="200"></div>
+      </div>
+      <button id="guardar" class="primario" type="submit">Guardar gasto</button>
+    </form>
+
+    <section class="card">
+      <div class="segmento vistas">
+        <button type="button" data-vista="mes">Mes</button>
+        <button type="button" data-vista="anio">Año</button>
+      </div>
+      <div class="mes-nav">
+        <button type="button" class="icono" id="mes-ant" aria-label="Mes anterior">‹</button>
+        <h2 id="mes-titulo"></h2>
+        <button type="button" class="icono" id="mes-sig" aria-label="Mes siguiente">›</button>
+      </div>
+      <div class="kpis">
+        <div><small>Gastos</small><b id="kpi-gastos">—</b></div>
+        <div><small>Ingresos</small><b id="kpi-ingresos">—</b></div>
+        <div><small>Balance</small><b id="kpi-balance">—</b></div>
+      </div>
+      <div id="grafico-anio" hidden>
+        <div class="barras-mes" id="barras-mes"></div>
+        <p class="leyenda"><span class="g"></span>Gastos <span class="n"></span>Ingresos · toca un mes para ver su detalle</p>
+        <p class="promedio" id="promedio-mes"></p>
+      </div>
+      <ul id="por-tipo"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Últimos movimientos</h2>
+      <ul id="recientes"></ul>
+    </section>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="config.js?v=5"></script>
+<script src="xlsx-registro.js?v=5"></script>
+<script src="app.js?v=5"></script>
+</body>
+</html>
