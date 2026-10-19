@@ -148,7 +148,11 @@ async function sincronizar({ soloLeer = false } = {}) {
       const libro = await X.abrirLibro(buffer);
       const reg = await X.leerRegistro(libro);
       const listas = await X.leerListas(libro).catch(() => null);
-      if (listas) { estado.listas = listas; guardado.escribir("listas", listas); }
+      if (listas) {
+        listas.obligaciones = await X.leerObligaciones(libro).catch(() => []);
+        estado.listas = listas;
+        guardado.escribir("listas", listas);
+      }
 
       const lote = estado.pendientes.slice();
       if (lote.length && !soloLeer) {
@@ -212,6 +216,18 @@ function render() {
   $("#tipos").innerHTML = opciones
     .map((t) => `<button type="button" class="chip${t === estado.tipo ? " activo" : ""}" data-tipo="${esc(t)}">${esc(t)}</button>`)
     .join("");
+
+  // Sugerencias de descripción: tus obligaciones, cuando el tipo es Obligaciones
+  const obligaciones = estado.listas.obligaciones || [];
+  const verSug = estado.movimiento === "Gasto" && estado.tipo &&
+    estado.tipo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === "obligaciones" && obligaciones.length > 0;
+  $("#bloque-sugerencias").hidden = !verSug;
+  if (verSug) {
+    const actual = $("#descripcion").value.trim();
+    $("#sugerencias").innerHTML = `<option value="">— Elige una obligación —</option>` + obligaciones
+      .map((t) => `<option value="${esc(t)}"${t === actual ? " selected" : ""}>${esc(t)}</option>`)
+      .join("");
+  }
 
   // Medio de pago (solo para gastos)
   const esGasto = estado.movimiento === "Gasto";
@@ -332,6 +348,9 @@ function conectarEventos() {
   $("#refrescar").addEventListener("click", () => sincronizar({ soloLeer: estado.pendientes.length === 0 }));
   $("#reintentar").addEventListener("click", () => sincronizar());
   for (const b of document.querySelectorAll("[data-mov]")) b.addEventListener("click", () => { estado.movimiento = b.dataset.mov; render(); });
+  $("#sugerencias").addEventListener("change", (e) => {
+    if (e.target.value) $("#descripcion").value = e.target.value;
+  });
   $("#medios").addEventListener("click", (e) => {
     const b = e.target.closest("[data-medio]");
     if (b) { estado.medio = b.dataset.medio; render(); }

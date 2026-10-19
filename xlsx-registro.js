@@ -194,6 +194,33 @@ async function leerListas(libro) {
   return gastos.length ? { gastos, ingresos, medios } : null;
 }
 
+// Nombres de la tabla "Obligaciones" de la hoja Consolidado Mensual (columna C, debajo de "Descripción")
+async function leerObligaciones(libro) {
+  const ruta = libro.hojas["Consolidado Mensual"];
+  if (!ruta) return [];
+  const doc = await libro.leer(ruta);
+  const { filas } = indexarFilas(doc);
+  const textoC = (r) => {
+    const row = filas.get(r);
+    const v = row ? valorCelda(celdasDeFila(row).get("C"), libro.compartidos) : null;
+    return v == null ? "" : String(v).trim();
+  };
+  const orden = [...filas.keys()].sort((a, b) => a - b);
+  for (const r of orden) {
+    const t = norm(textoC(r));
+    if ((t.startsWith("obligaciones") || t.startsWith("olbigaciones")) && norm(textoC(r + 1)).startsWith("descripcion")) {
+      const out = [];
+      for (let k = r + 2; k < r + 200; k++) {
+        const v = textoC(k);
+        if (!v) break;
+        out.push(v);
+      }
+      return out;
+    }
+  }
+  return [];
+}
+
 function obtenerFila(reg, r) {
   let row = reg.filas.get(r);
   if (row) return row;
@@ -281,4 +308,4 @@ async function generarArchivo(libro) {
   });
 }
 
-window.XlsxRegistro = { abrirLibro, leerRegistro, leerListas, agregarMovimientos, generarArchivo };
+window.XlsxRegistro = { abrirLibro, leerRegistro, leerListas, leerObligaciones, agregarMovimientos, generarArchivo };
