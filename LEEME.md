@@ -1,6 +1,6 @@
 # Mis Finanzas – app para el celular
 
-Registra gastos e ingresos desde el celular directo en **Presupuesto Personal.xlsx** (hoja *Registro*) en tu OneDrive.
+Registra gastos e ingresos desde el celular directo en **Presupuesto Parodys.xlsx** (hoja *Registro*) en tu OneDrive.
 La app descarga el archivo, escribe la nueva fila en Fecha / Descripción / Movimiento / Tipo de gasto / Medio de pago / Valor / Notas y lo vuelve a subir.
 Tus fórmulas, gráficos, listas desplegables y formatos no se tocan; Excel recalcula todo la próxima vez que abras el archivo.
 

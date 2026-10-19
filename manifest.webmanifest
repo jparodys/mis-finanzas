@@ -1,7 +1,7 @@
 {
   "name": "Mis Finanzas",
   "short_name": "Finanzas",
-  "description": "Registra gastos e ingresos en tu Presupuesto Personal de Excel",
+  "description": "Registra gastos e ingresos en tu Presupuesto Parodys de Excel",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

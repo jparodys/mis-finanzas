@@ -1,4 +1,4 @@
-// Lee y modifica "Presupuesto Personal.xlsx" directamente en su XML.
+// Lee y modifica "Presupuesto Parodys.xlsx" directamente en su XML.
 // Solo se tocan las celdas de entrada de la hoja Registro (y la marca de
 // recálculo del libro); gráficos, fórmulas, formatos y validaciones quedan intactos.
 

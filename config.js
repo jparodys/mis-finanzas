@@ -4,7 +4,7 @@ window.CONFIG = {
   CLIENT_ID: "8b0c61bf-c214-4325-9290-ed7bdf3b83cc",
 
   // Ruta del archivo dentro de tu OneDrive (sin "C:\Users\...\OneDrive")
-  RUTA_ARCHIVO: "Calender/Inversiones/Presupuesto Personal.xlsx",
+  RUTA_ARCHIVO: "Calender/Inversiones/Presupuesto Parodys.xlsx",
 
   // Listas por defecto (la app usa las de la hoja "Listas" del Excel cuando puede leerlas)
   GASTOS: ["Salud", "Mercado", "Jorge", "Carro", "Salidas", "Compras", "Obligaciones", "Inversion"],

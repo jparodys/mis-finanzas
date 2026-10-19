@@ -1,4 +1,4 @@
-// Mis Finanzas: registra gastos e ingresos en "Presupuesto Personal.xlsx" (OneDrive personal).
+// Mis Finanzas: registra gastos e ingresos en "Presupuesto Parodys.xlsx" (OneDrive personal).
 const C = window.CONFIG;
 const X = window.XlsxRegistro;
 const $ = (s) => document.querySelector(s);

@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que abra rápido y funcione sin señal.
 // Las llamadas a Microsoft (login y OneDrive) nunca se guardan en caché.
-const CACHE = "mis-finanzas-v5";
+const CACHE = "mis-finanzas-v6";
 const ARCHIVOS = [
   "./", "index.html", "app.js", "xlsx-registro.js", "config.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png",
