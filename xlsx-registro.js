@@ -266,19 +266,33 @@ function escribirCelda(doc, row, col, valor) {
   }
 }
 
+// Escribe un movimiento en las celdas de entrada de una fila de Registro
+function escribirMovimiento(doc, row, cols, e) {
+  escribirCelda(doc, row, cols.fecha, fechaASerial(e.fecha));
+  escribirCelda(doc, row, cols.descripcion, e.descripcion);
+  escribirCelda(doc, row, cols.movimiento, e.movimiento);
+  escribirCelda(doc, row, cols.tipo, e.tipo);
+  if (cols.medio) escribirCelda(doc, row, cols.medio, e.medio || "");
+  escribirCelda(doc, row, cols.valor, Number(e.valor));
+  if (cols.notas) escribirCelda(doc, row, cols.notas, e.notas || "");
+}
+
+// Guarda la hoja Registro modificada y pide a Excel recalcular todo al abrir
+function guardarHoja(libro, reg) {
+  libro.zip.file(reg.ruta, serializar(reg.doc));
+  const calc = libro.wbDoc.getElementsByTagNameNS(NS, "calcPr")[0];
+  if (calc) {
+    calc.setAttribute("fullCalcOnLoad", "1");
+    libro.zip.file("xl/workbook.xml", serializar(libro.wbDoc));
+  }
+}
+
 // entradas: [{fecha:"AAAA-MM-DD", descripcion, movimiento, tipo, medio, valor:Number, notas}]
 function agregarMovimientos(libro, reg, entradas) {
   const { doc, cols } = reg;
   for (const e of entradas) {
     const r = ++reg.ultima;
-    const row = obtenerFila(reg, r);
-    escribirCelda(doc, row, cols.fecha, fechaASerial(e.fecha));
-    escribirCelda(doc, row, cols.descripcion, e.descripcion);
-    escribirCelda(doc, row, cols.movimiento, e.movimiento);
-    escribirCelda(doc, row, cols.tipo, e.tipo);
-    if (cols.medio) escribirCelda(doc, row, cols.medio, e.medio || "");
-    escribirCelda(doc, row, cols.valor, Number(e.valor));
-    if (cols.notas) escribirCelda(doc, row, cols.notas, e.notas || "");
+    escribirMovimiento(doc, obtenerFila(reg, r), cols, e);
     reg.movimientos.push({ fila: r, ...e });
   }
   // Ajusta el rango declarado de la hoja si crecimos más allá
@@ -290,14 +304,34 @@ function agregarMovimientos(libro, reg, entradas) {
       if (reg.ultima > rf) dim.setAttribute("ref", `${ini}:${cf}${reg.ultima}`);
     }
   }
-  libro.zip.file(reg.ruta, serializar(doc));
+  guardarHoja(libro, reg);
+}
 
-  // Pide a Excel recalcular todo al abrir (Año, Mes, consolidado, dashboard)
-  const calc = libro.wbDoc.getElementsByTagNameNS(NS, "calcPr")[0];
-  if (calc) {
-    calc.setAttribute("fullCalcOnLoad", "1");
-    libro.zip.file("xl/workbook.xml", serializar(libro.wbDoc));
+function mismoMovimiento(a, b) {
+  return (a.fecha || "") === (b.fecha || "") &&
+    String(a.descripcion ?? "").trim() === String(b.descripcion ?? "").trim() &&
+    (a.movimiento || "") === (b.movimiento || "") &&
+    Math.abs((Number(a.valor) || 0) - (Number(b.valor) || 0)) < 0.005;
+}
+
+// Cambia (nuevo = movimiento) o borra (nuevo = null) la fila de "original",
+// solo si esa fila todavía tiene el mismo movimiento (por si se editó o se movió en el Excel).
+function editarMovimiento(libro, reg, original, nuevo) {
+  const i = reg.movimientos.findIndex((m) => m.fila === original.fila);
+  if (i < 0 || !mismoMovimiento(reg.movimientos[i], original)) {
+    throw new Error("Ese movimiento cambió o se movió en el Excel. Toca ↻ y vuelve a intentarlo.");
   }
+  const row = reg.filas.get(original.fila);
+  if (nuevo) {
+    escribirMovimiento(reg.doc, row, reg.cols, nuevo);
+    reg.movimientos[i] = { fila: original.fila, ...nuevo };
+  } else {
+    for (const k of ["fecha", "descripcion", "movimiento", "tipo", "medio", "valor", "notas"]) {
+      if (reg.cols[k]) escribirCelda(reg.doc, row, reg.cols[k], "");
+    }
+    reg.movimientos.splice(i, 1);
+  }
+  guardarHoja(libro, reg);
 }
 
 async function generarArchivo(libro) {
@@ -308,4 +342,4 @@ async function generarArchivo(libro) {
   });
 }
 
-window.XlsxRegistro = { abrirLibro, leerRegistro, leerListas, leerObligaciones, agregarMovimientos, generarArchivo };
+window.XlsxRegistro = { abrirLibro, leerRegistro, leerListas, leerObligaciones, agregarMovimientos, editarMovimiento, generarArchivo };

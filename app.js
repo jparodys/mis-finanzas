@@ -106,6 +106,7 @@ const estado = {
   mesVista: mesDe(new Date()),
   anioVista: new Date().getFullYear(),
   abierto: null,
+  editando: null,                     // { clave, original } mientras se corrige un movimiento
   ocupado: false,
   sesion: false,
 };
@@ -135,6 +136,12 @@ function resumir(movs, periodo) {
     porTipo: Object.entries(porTipo).sort((a, b) => b[1].total - a[1].total),
   };
 }
+
+// Copia liviana de los movimientos del Excel para mostrarlos (y editarlos) sin conexión
+const copiarMovs = (movs) => movs.map(({ fila, fecha, descripcion, movimiento, tipo, medio, valor, notas }) =>
+  ({ fila, fecha, descripcion, movimiento, tipo, medio, valor, notas }));
+// Identifica un movimiento: los pendientes por su id, los del Excel por su fila
+const claveDe = (m) => (m.id ? "p:" + m.id : "f:" + m.fila);
 
 // Descarga el Excel, agrega los pendientes y lo vuelve a subir
 async function sincronizar({ soloLeer = false } = {}) {
@@ -168,7 +175,7 @@ async function sincronizar({ soloLeer = false } = {}) {
       } else {
         aviso("Datos actualizados desde tu Excel", "ok");
       }
-      estado.movs = reg.movimientos.map(({ fecha, descripcion, movimiento, tipo, valor }) => ({ fecha, descripcion, movimiento, tipo, valor }));
+      estado.movs = copiarMovs(reg.movimientos);
       guardado.escribir("movs", estado.movs);
       break;
     }
@@ -180,6 +187,87 @@ async function sincronizar({ soloLeer = false } = {}) {
     estado.ocupado = false;
     render();
   }
+}
+
+// Cambia (nuevo) o borra (nuevo = null) un movimiento que ya está en el Excel
+async function editarEnExcel(original, nuevo) {
+  if (estado.ocupado) { aviso("Espera a que termine lo que se está guardando.", "error"); return false; }
+  estado.ocupado = true;
+  aviso(nuevo ? "Guardando los cambios en tu Excel…" : "Eliminando de tu Excel…", "info");
+  render();
+  let listo = false;
+  try {
+    for (let intento = 1; intento <= 3; intento++) {
+      const { item, buffer } = await obtenerArchivo();
+      const libro = await X.abrirLibro(buffer);
+      const reg = await X.leerRegistro(libro);
+      X.editarMovimiento(libro, reg, original, nuevo);
+      const res = await subirArchivo(item, await X.generarArchivo(libro));
+      if (res.status === 412 && intento < 3) continue;
+      if (res.status === 423) throw new Error("El archivo está bloqueado (abierto en otro lado). Ciérralo e intenta de nuevo.");
+      if (!res.ok) throw new Error("OneDrive no aceptó el cambio (" + res.status + ")");
+      estado.movs = copiarMovs(reg.movimientos);
+      guardado.escribir("movs", estado.movs);
+      aviso(nuevo ? `✓ Cambios guardados en Excel (fila ${original.fila})` : `✓ Movimiento eliminado del Excel (fila ${original.fila})`, "ok");
+      listo = true;
+      break;
+    }
+  } catch (e) {
+    if (e.sinSesion) estado.sesion = false;
+    const sinRed = !navigator.onLine || e instanceof TypeError;
+    aviso(sinRed ? "Sin conexión: para editar o eliminar necesitas internet." : e.message, "error");
+  } finally {
+    estado.ocupado = false;
+    render();
+  }
+  if (listo && estado.pendientes.length) sincronizar();
+  return listo;
+}
+
+function limpiarFormulario() {
+  $("#descripcion").value = ""; $("#valor").value = ""; $("#notas").value = "";
+  $("#fecha").value = hoyISO();
+  estado.tipo = null;
+}
+
+function empezarEdicion(clave) {
+  const m = [...estado.movs, ...estado.pendientes].find((x) => claveDe(x) === clave);
+  if (!m) return;
+  if (estado.ocupado) return aviso("Espera a que termine lo que se está guardando.", "error");
+  if (Number(m.valor) < 0) return aviso("Este es un ajuste negativo: corrígelo directamente en el Excel.", "error");
+  if (!m.id && !m.fila) return aviso("Toca ↻ para actualizar y vuelve a intentarlo.", "error");
+  estado.editando = { clave, original: { ...m } };
+  estado.movimiento = m.movimiento === "Ingreso" ? "Ingreso" : "Gasto";
+  estado.tipo = m.tipo || null;
+  estado.medio = m.medio || null;
+  $("#valor").value = Number(m.valor) ? Math.round(Number(m.valor)).toLocaleString("es-CO") : "";
+  $("#descripcion").value = m.descripcion || "";
+  $("#fecha").value = m.fecha || hoyISO();
+  $("#notas").value = m.notas || "";
+  render();
+  $("#form").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function terminarEdicion() {
+  estado.editando = null;
+  estado.medio = guardado.leer("ultimoMedio", null);
+  limpiarFormulario();
+  render();
+}
+
+async function eliminarEditando() {
+  const ed = estado.editando;
+  if (!ed) return;
+  const o = ed.original;
+  if (!confirm(`¿Eliminar "${o.descripcion}" de ${pesos(o.valor)} (${fechaCorta(o.fecha)})?`)) return;
+  if (o.id) {
+    estado.pendientes = estado.pendientes.filter((e) => e.id !== o.id);
+    guardado.escribir("pendientes", estado.pendientes);
+    aviso("✓ Movimiento pendiente eliminado", "ok");
+    terminarEdicion();
+    return;
+  }
+  if (await editarEnExcel(o, null)) terminarEdicion();
 }
 
 // ---------------------------------------------------------------- Interfaz
@@ -239,7 +327,11 @@ function render() {
     .join("");
 
   $("#guardar").disabled = estado.ocupado;
-  $("#guardar").textContent = estado.ocupado ? "Guardando…" : `Guardar ${estado.movimiento.toLowerCase()}`;
+  $("#guardar").textContent = estado.ocupado ? "Guardando…" : estado.editando ? "Guardar cambios" : `Guardar ${estado.movimiento.toLowerCase()}`;
+  const ed = estado.editando;
+  $("#barra-edicion").hidden = !ed;
+  if (ed) $("#texto-edicion").textContent = `Editando: ${ed.original.descripcion} · ${fechaCorta(ed.original.fecha)}`;
+  $("#eliminar").disabled = estado.ocupado;
 
   // Pendientes
   const n = estado.pendientes.length;
@@ -291,8 +383,9 @@ function render() {
     for (const i of items) meses[Number(i.fecha.slice(5, 7)) - 1] += Number(i.valor) || 0;
     return meses.map((v, k) => (v ? `<li><span class="fecha">${MESES[k].slice(0, 3)}</span><span class="desc"></span><b>${pesos(v)}</b></li>` : "")).join("");
   };
+  const marca = (m) => (estado.editando && estado.editando.clave === claveDe(m) ? " editando" : "");
   const detalleMes = (items) => items.slice().reverse()
-    .map((i) => `<li><span class="fecha">${fechaCorta(i.fecha)}</span><span class="desc">${esc(i.descripcion)}</span><b>${pesos(i.valor)}</b></li>`).join("");
+    .map((i) => `<li class="editable${marca(i)}" data-editar="${esc(claveDe(i))}"><span class="fecha">${fechaCorta(i.fecha)}</span><span class="desc">${esc(i.descripcion)}</span><b>${pesos(i.valor)}</b></li>`).join("");
   $("#por-tipo").innerHTML = r.porTipo.length
     ? r.porTipo.map(([t, { total, items }]) => `
       <li class="tipo${estado.abierto === t ? " abierto" : ""}" data-abrir="${esc(t)}">
@@ -307,7 +400,7 @@ function render() {
 
   const recientes = todos.slice(-8).reverse();
   $("#recientes").innerHTML = recientes.length
-    ? recientes.map((m) => `<li><span class="fecha">${fechaCorta(m.fecha)}</span><span class="desc">${esc(m.descripcion)}<small>${esc(m.tipo)}</small></span><b class="${m.movimiento === "Ingreso" ? "ing" : "gas"}">${m.movimiento === "Ingreso" ? "+" : "−"}${pesos(m.valor)}</b></li>`).join("")
+    ? recientes.map((m) => `<li class="editable${marca(m)}" data-editar="${esc(claveDe(m))}"><span class="fecha">${fechaCorta(m.fecha)}</span><span class="desc">${esc(m.descripcion)}<small>${esc(m.tipo)}</small></span><b class="${m.movimiento === "Ingreso" ? "ing" : "gas"}">${m.movimiento === "Ingreso" ? "+" : "−"}${pesos(m.valor)}</b></li>`).join("")
     : `<li class="vacio">Toca ↻ para leer tu Excel</li>`;
 }
 
@@ -324,19 +417,32 @@ function enviarFormulario(ev) {
   if (esGasto && !estado.medio) return aviso("Elige el medio de pago (Efectivo, Débito o Crédito)", "error");
   if (!valor) return aviso("Escribe el valor", "error");
   if (!descripcion) return aviso("Escribe una descripción", "error");
-  estado.pendientes.push({
-    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
+  const datos = {
     fecha: $("#fecha").value || hoyISO(),
     descripcion, movimiento: estado.movimiento, tipo: estado.tipo, valor,
     medio: esGasto ? estado.medio : "",
     notas: $("#notas").value.trim(),
-  });
+  };
+  if (estado.editando) return guardarEdicion(datos);
+  estado.pendientes.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()), ...datos });
   guardado.escribir("pendientes", estado.pendientes);
   if (esGasto) guardado.escribir("ultimoMedio", estado.medio);
-  $("#descripcion").value = ""; $("#valor").value = ""; $("#notas").value = "";
-  estado.tipo = null;
+  limpiarFormulario();
   render();
   sincronizar();
+}
+
+async function guardarEdicion(datos) {
+  const o = estado.editando.original;
+  if (o.id) {                         // todavía no se había subido: se corrige en la cola
+    estado.pendientes = estado.pendientes.map((e) => (e.id === o.id ? { id: o.id, ...datos } : e));
+    guardado.escribir("pendientes", estado.pendientes);
+    aviso("✓ Movimiento pendiente corregido", "ok");
+    terminarEdicion();
+    sincronizar();
+    return;
+  }
+  if (await editarEnExcel(o, datos)) terminarEdicion();
 }
 
 function conectarEventos() {
@@ -388,7 +494,15 @@ function conectarEventos() {
     estado.abierto = null;
     render();
   });
+  $("#cancelar-edicion").addEventListener("click", terminarEdicion);
+  $("#eliminar").addEventListener("click", eliminarEditando);
+  $("#recientes").addEventListener("click", (e) => {
+    const li = e.target.closest("[data-editar]");
+    if (li) empezarEdicion(li.dataset.editar);
+  });
   $("#por-tipo").addEventListener("click", (e) => {
+    const ed = e.target.closest("[data-editar]");
+    if (ed) { empezarEdicion(ed.dataset.editar); return; }
     const li = e.target.closest("[data-abrir]");
     if (!li) return;
     estado.abierto = estado.abierto === li.dataset.abrir ? null : li.dataset.abrir;
