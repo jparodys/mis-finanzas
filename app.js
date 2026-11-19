@@ -230,12 +230,70 @@ function limpiarFormulario() {
   estado.tipo = null;
 }
 
+// ---- Ventana de edición: el formulario se muestra en una ventana encima de la app
+let marcaFormulario = null;   // lugar original del formulario en la página
+let borrador = null;          // lo que estabas escribiendo antes de abrir la ventana
+
+function leerFormulario() {
+  return {
+    movimiento: estado.movimiento, tipo: estado.tipo, medio: estado.medio,
+    valor: $("#valor").value, descripcion: $("#descripcion").value, fecha: $("#fecha").value, notas: $("#notas").value,
+  };
+}
+function ponerFormulario(b) {
+  estado.movimiento = b.movimiento; estado.tipo = b.tipo; estado.medio = b.medio;
+  $("#valor").value = b.valor; $("#descripcion").value = b.descripcion; $("#fecha").value = b.fecha; $("#notas").value = b.notas;
+}
+function abrirVentana() {
+  const f = $("#form");
+  if (!marcaFormulario) { marcaFormulario = document.createComment("formulario"); f.parentNode.insertBefore(marcaFormulario, f); }
+  $("#modal-cuerpo").appendChild(f);
+  $("#modal").hidden = false;
+  bloquearFondo();
+}
+function cerrarVentana() {
+  if (marcaFormulario) marcaFormulario.parentNode.insertBefore($("#form"), marcaFormulario);
+  $("#modal").hidden = true;
+  bloquearFondo();
+}
+// El fondo no se desplaza mientras haya alguna ventana abierta
+function bloquearFondo() {
+  document.body.classList.toggle("modal-abierto", [...document.querySelectorAll(".modal")].some((m) => !m.hidden));
+}
+// Ventanas Resumen y Pagos del mes
+function abrirInfo(id) { $("#aviso").className = "aviso oculto"; $("#" + id).hidden = false; bloquearFondo(); }
+function cerrarInfo(id) { $("#" + id).hidden = true; bloquearFondo(); }
+// ¿El formulario tiene algo distinto del movimiento original?
+function hayCambios() {
+  const ed = estado.editando;
+  if (!ed) return false;
+  const o = ed.original;
+  const valor = Number($("#valor").value.replace(/\D/g, "")) || 0;
+  const medio = estado.movimiento === "Gasto" ? estado.medio || "" : "";
+  return (o.movimiento || "Gasto") !== estado.movimiento || (o.tipo || "") !== (estado.tipo || "") ||
+    (o.movimiento === "Gasto" ? o.medio || "" : "") !== medio || Math.round(Number(o.valor) || 0) !== valor ||
+    (o.descripcion || "").trim() !== $("#descripcion").value.trim() || (o.fecha || "") !== $("#fecha").value ||
+    (o.notas || "").trim() !== $("#notas").value.trim();
+}
+function actualizarBotonGuardar() {
+  if (!estado.editando) return;
+  const cambios = hayCambios();
+  $("#guardar").disabled = estado.ocupado || !cambios;
+  $("#guardar").textContent = estado.ocupado ? "Guardando…" : cambios ? "Guardar cambios" : "Sin cambios";
+}
+function intentarCerrar() {
+  if (estado.ocupado) return;
+  if (hayCambios() && !confirm("Tienes cambios sin guardar. ¿Salir sin guardarlos?")) return;
+  terminarEdicion();
+}
+
 function empezarEdicion(clave) {
   const m = [...estado.movs, ...estado.pendientes].find((x) => claveDe(x) === clave);
   if (!m) return;
   if (estado.ocupado) return aviso("Espera a que termine lo que se está guardando.", "error");
   if (Number(m.valor) < 0) return aviso("Este es un ajuste negativo: corrígelo directamente en el Excel.", "error");
   if (!m.id && !m.fila) return aviso("Toca ↻ para actualizar y vuelve a intentarlo.", "error");
+  if (!estado.editando) borrador = leerFormulario();
   estado.editando = { clave, original: { ...m } };
   estado.movimiento = m.movimiento === "Ingreso" ? "Ingreso" : "Gasto";
   estado.tipo = m.tipo || null;
@@ -244,14 +302,15 @@ function empezarEdicion(clave) {
   $("#descripcion").value = m.descripcion || "";
   $("#fecha").value = m.fecha || hoyISO();
   $("#notas").value = m.notas || "";
+  abrirVentana();
   render();
-  $("#form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function terminarEdicion() {
   estado.editando = null;
-  estado.medio = guardado.leer("ultimoMedio", null);
-  limpiarFormulario();
+  cerrarVentana();
+  if (borrador) { ponerFormulario(borrador); borrador = null; }   // vuelve lo que estabas escribiendo
+  else { estado.medio = guardado.leer("ultimoMedio", null); limpiarFormulario(); }
   render();
 }
 
@@ -334,8 +393,9 @@ function render() {
   $("#guardar").textContent = estado.ocupado ? "Guardando…" : estado.editando ? "Guardar cambios" : `Guardar ${estado.movimiento.toLowerCase()}`;
   const ed = estado.editando;
   $("#barra-edicion").hidden = !ed;
-  if (ed) $("#texto-edicion").textContent = `Editando: ${ed.original.descripcion} · ${fechaCorta(ed.original.fecha)}`;
+  if (ed) $("#modal-titulo").textContent = `Editar · ${fechaCorta(ed.original.fecha)}`;
   $("#eliminar").disabled = estado.ocupado;
+  actualizarBotonGuardar();
 
   // Pendientes
   const n = estado.pendientes.length;
@@ -404,7 +464,8 @@ function render() {
 
   // Pagos del mes (tabla Obligaciones del Excel)
   const pagos = estadoPagos(todos, estado.mesVista);
-  $("#tarjeta-pagos").hidden = pagos.length === 0;
+  $("#abrir-pagos").disabled = pagos.length === 0;
+  $("#pagos-mini").textContent = pagos.length ? `${pagos.filter((x) => x.ok).length} de ${pagos.length}` : "";
   if (pagos.length) {
     const [py, pm] = estado.mesVista.split("-");
     const hechos = pagos.filter((x) => x.ok).length;
@@ -443,7 +504,8 @@ function estadoPagos(movs, mes) {
 function prepararPago(nombre) {
   const o = listaObligaciones().find((x) => x.nombre === nombre);
   if (!o) return;
-  if (estado.editando) terminarEdicion();
+  if (estado.editando) return;
+  cerrarInfo("ventana-pagos");
   estado.movimiento = "Gasto";
   estado.tipo = o.tipo;
   $("#descripcion").value = o.nombre;
@@ -557,7 +619,21 @@ function conectarEventos() {
     estado.abierto = null;
     render();
   });
-  $("#cancelar-edicion").addEventListener("click", terminarEdicion);
+  $("#cancelar-edicion").addEventListener("click", intentarCerrar);
+  $("#cerrar-modal").addEventListener("click", intentarCerrar);
+  $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") intentarCerrar(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (estado.editando) return intentarCerrar();
+    const abierta = [...document.querySelectorAll(".ventana")].find((v) => !v.hidden);
+    if (abierta) cerrarInfo(abierta.id);
+  });
+  $("#form").addEventListener("input", actualizarBotonGuardar);
+  $("#form").addEventListener("change", actualizarBotonGuardar);
+  $("#abrir-resumen").addEventListener("click", () => abrirInfo("ventana-resumen"));
+  $("#abrir-pagos").addEventListener("click", () => abrirInfo("ventana-pagos"));
+  for (const b of document.querySelectorAll("[data-cerrar]")) b.addEventListener("click", () => cerrarInfo(b.dataset.cerrar));
+  for (const v of document.querySelectorAll(".ventana")) v.addEventListener("click", (e) => { if (e.target === v) cerrarInfo(v.id); });
   $("#pagos").addEventListener("click", (e) => {
     const li = e.target.closest("[data-pagar]");
     if (li) prepararPago(li.dataset.pagar);
