@@ -195,6 +195,7 @@ async function leerListas(libro) {
 }
 
 // Nombres de la tabla "Obligaciones" de la hoja Consolidado Mensual (columna C, debajo de "Descripción")
+// con su tipo de gasto (columna "Tipo"; si no existe, "Obligaciones") y su valor de referencia: [{ nombre, tipo, valor }]
 async function leerObligaciones(libro) {
   const ruta = libro.hojas["Consolidado Mensual"];
   if (!ruta) return [];
@@ -209,11 +210,29 @@ async function leerObligaciones(libro) {
   for (const r of orden) {
     const t = norm(textoC(r));
     if ((t.startsWith("obligaciones") || t.startsWith("olbigaciones")) && norm(textoC(r + 1)).startsWith("descripcion")) {
+      // columna "Tipo" en la fila de encabezados
+      let colTipo = null, colValor = null;
+      const enc = filas.get(r + 1);
+      if (enc) for (const [col, c] of celdasDeFila(enc)) {
+        const h = norm(valorCelda(c, libro.compartidos));
+        if (h === "tipo") colTipo = col;
+        if (h === "valor") colValor = col;
+      }
       const out = [];
       for (let k = r + 2; k < r + 200; k++) {
         const v = textoC(k);
         if (!v) break;
-        out.push(v);
+        let tipo = "Obligaciones", valor = 0;
+        const cs = filas.get(k) ? celdasDeFila(filas.get(k)) : new Map();
+        if (colTipo) {
+          const tv = valorCelda(cs.get(colTipo), libro.compartidos);
+          if (tv != null && String(tv).trim()) tipo = String(tv).trim();
+        }
+        if (colValor) {
+          const vv = valorCelda(cs.get(colValor), libro.compartidos);
+          valor = typeof vv === "number" ? vv : Number(vv) || 0;
+        }
+        out.push({ nombre: v, tipo, valor });
       }
       return out;
     }

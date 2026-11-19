@@ -305,14 +305,18 @@ function render() {
     .map((t) => `<button type="button" class="chip${t === estado.tipo ? " activo" : ""}" data-tipo="${esc(t)}">${esc(t)}</button>`)
     .join("");
 
-  // Sugerencias de descripción: tus obligaciones, cuando el tipo es Obligaciones
-  const obligaciones = estado.listas.obligaciones || [];
-  const verSug = estado.movimiento === "Gasto" && estado.tipo &&
-    estado.tipo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === "obligaciones" && obligaciones.length > 0;
+  // Descripciones de la tabla Obligaciones del Excel para el tipo elegido.
+  // Obligaciones: solo se puede elegir de la lista. Otros tipos (Inversion, Carro…): sugerencia + texto libre.
+  const sugerencias = sugerenciasDe(estado.tipo);
+  const soloLista = soloDeLaLista();
+  const verSug = sugerencias.length > 0;
   $("#bloque-sugerencias").hidden = !verSug;
+  $("#descripcion").readOnly = soloLista;
+  $("#descripcion").placeholder = soloLista ? "Elige la obligación en la lista de arriba" : "Ej: Mercado de la semana";
+  if (soloLista && !sugerencias.includes($("#descripcion").value.trim())) $("#descripcion").value = "";
   if (verSug) {
     const actual = $("#descripcion").value.trim();
-    $("#sugerencias").innerHTML = `<option value="">— Elige una obligación —</option>` + obligaciones
+    $("#sugerencias").innerHTML = `<option value="">${soloLista ? "— Elige una obligación —" : "— Sugerencias (o escribe abajo) —"}</option>` + sugerencias
       .map((t) => `<option value="${esc(t)}"${t === actual ? " selected" : ""}>${esc(t)}</option>`)
       .join("");
   }
@@ -398,10 +402,68 @@ function render() {
       </li>`).join("")
     : `<li class="vacio">No hay gastos registrados en ${enAnio ? "este año" : "este mes"}</li>`;
 
+  // Pagos del mes (tabla Obligaciones del Excel)
+  const pagos = estadoPagos(todos, estado.mesVista);
+  $("#tarjeta-pagos").hidden = pagos.length === 0;
+  if (pagos.length) {
+    const [py, pm] = estado.mesVista.split("-");
+    const hechos = pagos.filter((x) => x.ok).length;
+    $("#pagos-titulo").textContent = `${MESES[Number(pm) - 1]} ${py}`;
+    $("#pagos-resumen").textContent = `${hechos} de ${pagos.length} pagados`;
+    $("#pagos-barra").style.width = `${(hechos / pagos.length) * 100}%`;
+    const orden = [...pagos.filter((x) => !x.ok), ...pagos.filter((x) => x.ok)];
+    $("#pagos").innerHTML = orden.map((x) => x.ok
+      ? `<li class="pago ok"><span class="marca">✓</span><span class="desc">${esc(x.nombre)}<small>${esc(x.tipo)}</small></span><b>${pesos(x.pagado)}</b></li>`
+      : `<li class="pago pendiente" data-pagar="${esc(x.nombre)}"><span class="marca">○</span><span class="desc">${esc(x.nombre)}<small>${esc(x.tipo)} · toca para registrar</small></span><b>${x.valor ? pesos(x.valor) : "Pendiente"}</b></li>`).join("");
+  }
+
   const recientes = todos.slice(-8).reverse();
   $("#recientes").innerHTML = recientes.length
     ? recientes.map((m) => `<li class="editable${marca(m)}" data-editar="${esc(claveDe(m))}"><span class="fecha">${fechaCorta(m.fecha)}</span><span class="desc">${esc(m.descripcion)}<small>${esc(m.tipo)}</small></span><b class="${m.movimiento === "Ingreso" ? "ing" : "gas"}">${m.movimiento === "Ingreso" ? "+" : "−"}${pesos(m.valor)}</b></li>`).join("")
     : `<li class="vacio">Toca ↻ para leer tu Excel</li>`;
+}
+
+const normTexto = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+const sinEspacios = (t) => normTexto(t).replace(/\s+/g, "");
+const listaObligaciones = () => (estado.listas.obligaciones || [])
+  .map((x) => (typeof x === "string" ? { nombre: x, tipo: "Obligaciones", valor: 0 } : x));
+
+// Igual que la columna OK del Excel: en el mes, un gasto de ese tipo cuya descripción contiene el nombre
+// (sin importar mayúsculas, tildes ni espacios)
+function estadoPagos(movs, mes) {
+  const delMes = movs.filter((m) => m.movimiento === "Gasto" && m.fecha && m.fecha.startsWith(mes));
+  return listaObligaciones().map((o) => {
+    const clave = sinEspacios(o.nombre);
+    const pagos = delMes.filter((m) => sinEspacios(m.descripcion).includes(clave) &&
+      (!o.tipo || normTexto(m.tipo) === normTexto(o.tipo)));
+    return { ...o, ok: pagos.length > 0, pagado: pagos.reduce((a, m) => a + (Number(m.valor) || 0), 0) };
+  });
+}
+
+function prepararPago(nombre) {
+  const o = listaObligaciones().find((x) => x.nombre === nombre);
+  if (!o) return;
+  if (estado.editando) terminarEdicion();
+  estado.movimiento = "Gasto";
+  estado.tipo = o.tipo;
+  $("#descripcion").value = o.nombre;
+  $("#valor").value = o.valor ? Math.round(o.valor).toLocaleString("es-CO") : "";
+  $("#fecha").value = hoyISO();
+  render();
+  $("#form").scrollIntoView({ behavior: "smooth", block: "start" });
+  aviso(`Revisa el valor y el medio de pago de "${o.nombre}" y toca Guardar gasto.`, "info");
+}
+
+// Nombres de la tabla Obligaciones cuyo tipo coincide con el tipo de gasto elegido
+function sugerenciasDe(tipo) {
+  if (estado.movimiento !== "Gasto" || !tipo) return [];
+  return listaObligaciones()
+    .filter((x) => normTexto(x.tipo) === normTexto(tipo))
+    .map((x) => x.nombre);
+}
+// Con Obligaciones la descripción debe salir de la lista (al corregir un movimiento viejo se permite libre)
+function soloDeLaLista() {
+  return normTexto(estado.tipo) === "obligaciones" && !estado.editando && sugerenciasDe(estado.tipo).length > 0;
 }
 
 function valorNumerico() {
@@ -416,6 +478,7 @@ function enviarFormulario(ev) {
   const esGasto = estado.movimiento === "Gasto";
   if (esGasto && !estado.medio) return aviso("Elige el medio de pago (Efectivo, Débito o Crédito)", "error");
   if (!valor) return aviso("Escribe el valor", "error");
+  if (soloDeLaLista() && !sugerenciasDe(estado.tipo).includes(descripcion)) return aviso("Elige la obligación de la lista", "error");
   if (!descripcion) return aviso("Escribe una descripción", "error");
   const datos = {
     fecha: $("#fecha").value || hoyISO(),
@@ -495,6 +558,12 @@ function conectarEventos() {
     render();
   });
   $("#cancelar-edicion").addEventListener("click", terminarEdicion);
+  $("#pagos").addEventListener("click", (e) => {
+    const li = e.target.closest("[data-pagar]");
+    if (li) prepararPago(li.dataset.pagar);
+  });
+  $("#pagos-mes-ant").addEventListener("click", () => { estado.mesVista = moverMes(estado.mesVista, -1); render(); });
+  $("#pagos-mes-sig").addEventListener("click", () => { estado.mesVista = moverMes(estado.mesVista, 1); render(); });
   $("#eliminar").addEventListener("click", eliminarEditando);
   $("#recientes").addEventListener("click", (e) => {
     const li = e.target.closest("[data-editar]");
